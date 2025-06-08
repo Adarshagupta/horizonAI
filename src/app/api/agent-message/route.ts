@@ -15,19 +15,43 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log('Agent message request:', { conversationId, agentId, agentName, message })
+    console.log('🔍 Agent message request:', { conversationId, agentId, agentName, message })
 
-    // Get conversation from datastore
-    const conversation = dataStore.getConversation(conversationId)
+    // Try to get conversation from Firebase first (persistent), then fallback to dataStore
+    let conversation = null
+    let source = 'unknown'
+    
+    try {
+      console.log('🔥 Looking up conversation in Firebase:', conversationId)
+      conversation = await realtimeChatService.getConversation(conversationId)
+      if (conversation) {
+        source = 'firebase'
+        console.log('✅ Found conversation in Firebase')
+      } else {
+        console.log('❌ Conversation not found in Firebase, trying dataStore')
+        conversation = dataStore.getConversation(conversationId)
+        if (conversation) {
+          source = 'datastore'
+          console.log('✅ Found conversation in dataStore fallback')
+        }
+      }
+    } catch (firebaseError) {
+      console.log('🚨 Firebase lookup failed, using dataStore fallback:', firebaseError)
+      conversation = dataStore.getConversation(conversationId)
+      if (conversation) {
+        source = 'datastore-fallback'
+      }
+    }
     
     if (!conversation) {
+      console.log('❌ Conversation not found in Firebase or dataStore:', conversationId)
       return NextResponse.json(
         { error: 'Conversation not found' },
         { status: 404 }
       )
     }
 
-    console.log('Current conversation state:', { 
+    console.log('✅ Found conversation via:', source, { 
       assignedAgent: conversation.assignedAgent, 
       status: conversation.status,
       agentName: conversation.agentName 
@@ -36,13 +60,8 @@ export async function POST(request: NextRequest) {
     // Allow any agent to send messages - no assignment restrictions
     console.log(`💬 Agent ${agentName} (${agentId}) sending message to conversation ${conversationId}`)
     
-    // Update conversation status to connected if not already
-    if (conversation.status !== 'connected') {
-      dataStore.updateConversationStatus(conversationId, 'connected')
-    }
-
     try {
-      // Try to send via Firebase Realtime Database
+      // Try to send via Firebase Realtime Database first
       await realtimeChatService.sendMessage(conversationId, {
         conversationId,
         content: message,
@@ -56,35 +75,40 @@ export async function POST(request: NextRequest) {
       })
       console.log('✅ Message sent via Firebase Realtime Database')
     } catch (realtimeError) {
-      console.log('Firebase send failed, using datastore fallback:', realtimeError)
+      console.log('🚨 Firebase send failed, using datastore fallback:', realtimeError)
+      
+      // Fallback: Save to datastore
+      const savedMessage = dataStore.addMessage(conversationId, {
+        content: message,
+        type: 'agent',
+        sender: agentName,
+        timestamp: Date.now(),
+        messageType
+      })
+      
+      // Update conversation status to connected if not already
+      if (conversation.status !== 'connected') {
+        dataStore.updateConversationStatus(conversationId, 'connected')
+      }
+      
+      // Update conversation last activity
+      dataStore.updateConversationActivity(conversationId)
     }
 
-    // Always save to datastore as backup
-    const savedMessage = dataStore.addMessage(conversationId, {
-      content: message,
-      type: 'agent',
-      sender: agentName,
-      timestamp: Date.now(),
-      messageType
-    })
-
-    // Update conversation last activity
-    dataStore.updateConversationActivity(conversationId)
-
-    console.log('✅ Agent message saved successfully:', savedMessage.id)
+    console.log('✅ Agent message processing completed')
 
     const response = {
       success: true,
       message: 'Message sent successfully',
-      messageId: savedMessage.id,
       conversationId,
       agentId,
       agentName,
-      timestamp: savedMessage.timestamp,
+      timestamp: Date.now(),
       metadata: {
         sendTime: Date.now(),
         messageType,
-        source: 'agent'
+        source: 'agent',
+        foundVia: source
       }
     }
 
@@ -98,7 +122,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(response, { headers })
 
   } catch (error) {
-    console.error('Agent message API error:', error)
+    console.error('🚨 Agent message API error:', error)
     
     return NextResponse.json(
       {

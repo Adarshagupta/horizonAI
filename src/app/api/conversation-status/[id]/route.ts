@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { dataStore } from '@/lib/data-store'
+import { realtimeChatService } from '@/lib/realtime-chat'
 
 export async function GET(
   request: NextRequest,
@@ -22,13 +23,34 @@ export async function GET(
       })
     }
 
-    const conversation = dataStore.getConversation(conversationId)
-    console.log('Found conversation:', conversation ? {
-      id: conversation.id,
-      status: conversation.status,
-      assignedAgent: conversation.assignedAgent,
-      agentName: conversation.agentName
-    } : 'NOT FOUND')
+    // Try Firebase first (persistent), then fallback to dataStore
+    let conversation = null
+    let source = 'unknown'
+    try {
+      conversation = await realtimeChatService.getConversation(conversationId)
+      if (conversation) {
+        source = 'firebase'
+        console.log('✅ Found conversation in Firebase:', {
+          id: conversation.id,
+          status: conversation.status,
+          assignedAgent: conversation.assignedAgent,
+          agentName: conversation.agentName
+        })
+      } else {
+        console.log('❌ Conversation not found in Firebase, trying dataStore fallback')
+        conversation = dataStore.getConversation(conversationId)
+        if (conversation) {
+          source = 'data-store'
+          console.log('✅ Found conversation in dataStore fallback')
+        }
+      }
+    } catch (firebaseError) {
+      console.log('🚨 Firebase lookup failed, using dataStore fallback:', firebaseError)
+      conversation = dataStore.getConversation(conversationId)
+      if (conversation) {
+        source = 'data-store-fallback'
+      }
+    }
     
     if (!conversation) {
       return NextResponse.json({ error: 'Conversation not found' }, { 
@@ -58,7 +80,7 @@ export async function GET(
         customerEmail: conversation.customerEmail,
         unreadCount: conversation.unreadCount
       },
-      source: 'data-store'
+      source: source
     }
 
     return NextResponse.json(response, {

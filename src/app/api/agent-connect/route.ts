@@ -49,6 +49,15 @@ export async function POST(request: NextRequest) {
     // Always update datastore as fallback/backup
     dataStore.assignAgent(conversationId, agentId, agentName)
     dataStore.updateConversationStatus(conversationId, 'connected')
+    
+    // Debug: Check conversation state after assignment
+    const updatedConversation = dataStore.getConversation(conversationId)
+    console.log('🔧 Conversation state after agent assignment:', {
+      conversationId,
+      status: updatedConversation?.status,
+      assignedAgent: updatedConversation?.assignedAgent,
+      agentName: updatedConversation?.agentName
+    })
 
     // Add system message about agent joining
     const systemMessage = dataStore.addMessage(conversationId, {

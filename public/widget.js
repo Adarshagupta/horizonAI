@@ -840,7 +840,11 @@
         console.log('🔍 AI Response debug:', {
           silent: aiResponse.silent,
           message: aiResponse.message,
-          shouldAddMessage: !aiResponse.silent && aiResponse.message
+          needsHuman: aiResponse.needsHuman,
+          confidence: aiResponse.confidence,
+          agentConnected: aiResponse.agentConnected,
+          shouldAddMessage: !aiResponse.silent && aiResponse.message,
+          shouldShowHumanConnect: aiResponse.needsHuman || aiResponse.confidence < 0.6
         });
         
         if (!aiResponse.silent && aiResponse.message) {
@@ -853,8 +857,8 @@
           );
         }
         
-        // Check if human agent is needed
-        if (aiResponse.needsHuman || aiResponse.confidence < 0.6) {
+        // Check if human agent is needed - SKIP if agent already connected
+        if (!aiResponse.agentConnected && (aiResponse.needsHuman || aiResponse.confidence < 0.6)) {
           setTimeout(() => {
             addMessage(
               "Would you like me to connect you with a human agent for more personalized assistance?",

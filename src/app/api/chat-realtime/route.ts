@@ -22,13 +22,21 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log('Realtime chat request:', { conversationId, businessId, customerInfo })
+    console.log('Realtime chat request:', { conversationId, businessId, customerInfo, messagePreview: message.substring(0, 30) })
 
     // Check if an agent is already connected to this conversation
     if (conversationId) {
       const existingConversation = dataStore.getConversation(conversationId)
+      console.log('🔍 Checking existing conversation:', {
+        conversationId,
+        exists: !!existingConversation,
+        status: existingConversation?.status,
+        assignedAgent: existingConversation?.assignedAgent,
+        agentName: existingConversation?.agentName
+      })
+      
       if (existingConversation && existingConversation.status === 'connected' && existingConversation.assignedAgent) {
-        console.log('Agent already connected to conversation, saving customer message only')
+        console.log('✅ Agent already connected to conversation, saving customer message only')
         
         // Just save the customer message - don't generate AI response
         try {
@@ -63,6 +71,8 @@ export async function POST(request: NextRequest) {
             'Access-Control-Allow-Headers': 'Content-Type',
           }
         })
+      } else {
+        console.log('❌ Agent check failed - will continue with AI response')
       }
     }
 
@@ -155,10 +165,39 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Check again if agent is connected before generating AI response
+    if (conversationId) {
+      const finalCheck = dataStore.getConversation(conversationId)
+      if (finalCheck && finalCheck.status === 'connected' && finalCheck.assignedAgent) {
+        console.log('🛑 Final check: Agent is connected, NOT generating AI response')
+        return NextResponse.json({
+          success: true,
+          messageDelivered: true,
+          silent: true,
+          agentConnected: true,
+          agentName: finalCheck.agentName,
+          metadata: {
+            responseTime: Date.now(),
+            businessId,
+            conversationId,
+            agentConnected: true,
+            messageStatus: 'delivered'
+          }
+        }, {
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type',
+          }
+        })
+      }
+    }
+
     // Detect urgency
     const urgency = detectUrgency(message)
 
     // Generate AI response
+    console.log('🤖 Generating AI response - no agent connected')
     const aiResponse = await generateAIResponse(message, {
       customerName: customerInfo?.name,
       previousMessages: previousMessages.map((msg: any) => msg.content),

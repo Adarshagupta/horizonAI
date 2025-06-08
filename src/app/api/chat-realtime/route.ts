@@ -97,10 +97,18 @@ export async function POST(request: NextRequest) {
     // Create conversation if it doesn't exist
     if (conversationId && customerInfo) {
       try {
-        // Check if this is the first message (new conversation)
-        const isNewConversation = previousMessages.length === 0
+        // Check if conversation already exists in Firebase
+        let existingConversation = null
+        try {
+          existingConversation = await realtimeChatService.getConversation(conversationId)
+        } catch (error) {
+          console.log('Error checking existing conversation:', error)
+        }
+        
+        const isNewConversation = !existingConversation
         
         if (isNewConversation) {
+          console.log('🆕 Creating new conversation:', conversationId)
           await realtimeChatService.createConversation(conversationId, {
             businessId,
             customerId: customerInfo.email,
@@ -110,6 +118,8 @@ export async function POST(request: NextRequest) {
             unreadCount: 0,
             priority: 'medium'
           })
+        } else {
+          console.log('✅ Using existing conversation:', conversationId, 'Status:', existingConversation.status)
         }
 
         // Send customer message to realtime database
@@ -177,7 +187,18 @@ export async function POST(request: NextRequest) {
 
     // Check again if agent is connected before generating AI response
     if (conversationId) {
-      const finalCheck = dataStore.getConversation(conversationId)
+      // Check Firebase first, then dataStore fallback
+      let finalCheck = null
+      try {
+        finalCheck = await realtimeChatService.getConversation(conversationId)
+        if (!finalCheck) {
+          finalCheck = dataStore.getConversation(conversationId)
+        }
+      } catch (error) {
+        console.log('Error in final agent check, using dataStore:', error)
+        finalCheck = dataStore.getConversation(conversationId)
+      }
+      
       if (finalCheck && finalCheck.status === 'connected' && finalCheck.assignedAgent) {
         console.log('🛑 Final check: Agent is connected, NOT generating AI response')
         return NextResponse.json({

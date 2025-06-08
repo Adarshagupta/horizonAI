@@ -77,18 +77,13 @@ export default function WidgetSettingsPage() {
   }
 
   const generateWidgetCode = () => {
-    const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'
+    const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://horizon-ai-one.vercel.app'
     const businessId = user?.businessId || user?.id || 'YOUR_BUSINESS_ID'
     return `<!-- ChatSupport AI Widget -->
 <script
   src="${baseUrl}/widget.js"
   data-business-id="${businessId}"
-  data-primary-color="${settings.primaryColor}"
-  data-accent-color="${settings.accentColor}"
-  data-welcome-message="${settings.welcomeMessage}"
-  data-position="${settings.position}"
-  data-enabled="${settings.enabled}"
-  data-ai-enabled="${settings.aiEnabled}"
+  data-api-url="${baseUrl}"
 ></script>`
   }
 
@@ -314,16 +309,17 @@ export default function WidgetSettingsPage() {
             </div>
           </div>
 
-          <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-md">
+          <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-md">
             <div className="flex items-start space-x-3">
-              <svg className="h-5 w-5 text-yellow-600 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              <svg className="h-5 w-5 text-green-600 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
               </svg>
               <div>
-                <h4 className="text-sm font-medium text-yellow-900">External Domain Setup</h4>
-                <p className="text-sm text-yellow-700 mt-1">
-                  If testing on CodePen, JSFiddle, or other external domains, add this attribute:<br/>
-                  <code className="bg-yellow-100 px-1 rounded">data-api-url="{typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'}"</code>
+                <h4 className="text-sm font-medium text-green-900">Multi-Domain Ready</h4>
+                <p className="text-sm text-green-700 mt-1">
+                  ✅ Supports localhost, horizon-ai-one.vercel.app, and infin8t.net automatically<br/>
+                  ✅ Works on CodePen, JSFiddle, and other external domains<br/>
+                  ✅ Includes CORS support and automatic domain detection
                 </p>
               </div>
             </div>

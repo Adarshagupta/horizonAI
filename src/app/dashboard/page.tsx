@@ -367,14 +367,12 @@ export default function Dashboard() {
               </p>
               <div className="bg-gray-100 rounded-md p-3">
                 <code className="text-xs text-gray-800">
-{`<script>
-  (function() {
-    var script = document.createElement('script');
-    script.src = '${typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'}/widget.js';
-    script.setAttribute('data-business-id', '${user?.businessId || user?.id || 'your-business-id'}');
-    document.head.appendChild(script);
-  })();
-</script>`}
+{`<!-- ChatSupport AI Widget -->
+<script
+  src="${typeof window !== 'undefined' ? window.location.origin : 'https://horizon-ai-one.vercel.app'}/widget.js"
+  data-business-id="${user?.businessId || user?.id || 'your-business-id'}"
+  data-api-url="${typeof window !== 'undefined' ? window.location.origin : 'https://horizon-ai-one.vercel.app'}"
+></script>`}
                 </code>
               </div>
               <Link

@@ -29,9 +29,19 @@ export async function GET(request: NextRequest) {
         source = 'firebase'
         console.log('✅ Found conversation in Firebase')
         
-        // Firebase stores messages differently - no messages property in ConversationStatus
-        // We need to fetch messages separately or include them in the response
-        messages = []
+        // Convert Firebase messages object to array
+        if (conversation.messages && typeof conversation.messages === 'object') {
+          messages = Object.keys(conversation.messages).map(key => ({
+            id: key,
+            ...conversation.messages[key]
+          }))
+          // Sort by timestamp
+          messages.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
+          console.log(`📨 Extracted ${messages.length} messages from Firebase`)
+        } else {
+          messages = []
+          console.log('📨 No messages found in Firebase conversation')
+        }
       } else {
         console.log('❌ Conversation not found in Firebase, trying dataStore')
         conversation = dataStore.getConversation(conversationId)
@@ -58,13 +68,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // For Firebase conversations, messages are stored separately
-    // We'll return empty messages for now and rely on the conversation-status API
-    // which already includes messages in its response
-    if (source === 'firebase') {
-      messages = []
-      console.log('📝 Firebase conversation found, but messages fetched separately via conversation-status API')
-    }
+    // Firebase messages are now properly extracted above
 
     // Filter messages if since timestamp provided
     if (since && messages.length > 0) {
@@ -88,8 +92,7 @@ export async function GET(request: NextRequest) {
         agentName: conversation.agentName,
         lastActivity: conversation.lastActivity
       },
-      source: source,
-      note: source === 'firebase' ? 'Messages are available via conversation-status API' : undefined
+      source: source
     }
 
     return NextResponse.json(response, {

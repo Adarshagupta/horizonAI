@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
         const isNewConversation = previousMessages.length === 0
         
         if (isNewConversation) {
-          await realtimeChatService.createConversation({
+          await realtimeChatService.createConversation(conversationId, {
             businessId,
             customerId: customerInfo.email,
             customerName: customerInfo.name,

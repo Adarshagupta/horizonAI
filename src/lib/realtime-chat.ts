@@ -92,22 +92,22 @@ class RealtimeChatService {
     };
   }
 
-  // Create a new conversation
-  async createConversation(conversation: Omit<ConversationStatus, 'id' | 'startedAt' | 'lastActivity'>): Promise<string> {
-    const conversationsRef = ref(rtdb, 'conversations');
-    const newConversationRef = push(conversationsRef);
+  // Create a new conversation with specific ID
+  async createConversation(conversationId: string, conversation: Omit<ConversationStatus, 'id' | 'startedAt' | 'lastActivity'>): Promise<string> {
+    const conversationRef = ref(rtdb, `conversations/${conversationId}`);
     
     const conversationData = {
+      id: conversationId,
       ...conversation,
       startedAt: serverTimestamp(),
       lastActivity: serverTimestamp(),
     };
 
-    await set(newConversationRef, conversationData);
+    await set(conversationRef, conversationData);
     
     // Send initial system message
-    await this.sendMessage(newConversationRef.key!, {
-      conversationId: newConversationRef.key!,
+    await this.sendMessage(conversationId, {
+      conversationId,
       content: `${conversation.customerName} has joined the conversation`,
       sender: {
         id: 'system',
@@ -118,7 +118,7 @@ class RealtimeChatService {
       messageType: 'system',
     });
 
-    return newConversationRef.key!;
+    return conversationId;
   }
 
   // Listen to conversation status changes

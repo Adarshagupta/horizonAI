@@ -24,6 +24,7 @@ export interface ConversationStatus {
   status: 'waiting' | 'connected' | 'ended';
   assignedAgent?: string;
   agentName?: string;
+  agentConnected?: boolean; // Computed field indicating if an agent is assigned
   startedAt: any;
   lastActivity: any;
   unreadCount: number;

@@ -3,9 +3,10 @@ import { dataStore } from '@/lib/data-store'
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { conversationId: string } }
+  context: { params: Promise<{ conversationId: string }> }
 ) {
   try {
+    const params = await context.params
     const { conversationId } = params
 
     if (!conversationId) {

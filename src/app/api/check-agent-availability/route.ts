@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
     const agents = dataStore.getAgents(businessId)
     
     let availableAgents = 0
-    let totalAgents = agents.length
+    const totalAgents = agents.length
     const agentList: any[] = []
 
     agents.forEach(agent => {

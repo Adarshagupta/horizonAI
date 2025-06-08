@@ -76,8 +76,24 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Check if human agent is explicitly requested
-    if (shouldTransferToHuman(message)) {
+    // Check if human agent is explicitly requested (only if no agent is already connected)
+    let agentAlreadyConnected = false
+    if (conversationId) {
+      try {
+        const currentConversation = await realtimeChatService.getConversation(conversationId)
+        agentAlreadyConnected = !!(currentConversation && (currentConversation.status === 'connected' || currentConversation.assignedAgent))
+        console.log('🔍 Agent connection check before human transfer:', {
+          found: !!currentConversation,
+          status: currentConversation?.status,
+          assignedAgent: currentConversation?.assignedAgent,
+          agentAlreadyConnected
+        })
+      } catch (error) {
+        console.error('Error checking agent connection:', error)
+      }
+    }
+    
+    if (!agentAlreadyConnected && shouldTransferToHuman(message)) {
       await realtimeChatService.requestHumanAgent(conversationId, message)
       
       return NextResponse.json({

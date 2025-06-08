@@ -1,5 +1,5 @@
 import { rtdb } from './firebase';
-import { ref, push, set, onValue, off, serverTimestamp, remove, update } from 'firebase/database';
+import { ref, push, set, onValue, off, serverTimestamp, remove, update, get } from 'firebase/database';
 
 export interface RealtimeMessage {
   id: string;
@@ -119,6 +119,21 @@ class RealtimeChatService {
     });
 
     return conversationId;
+  }
+
+  // Get conversation directly (one-time read)
+  async getConversation(conversationId: string): Promise<ConversationStatus | null> {
+    const conversationRef = ref(rtdb, `conversations/${conversationId}`);
+    const snapshot = await get(conversationRef);
+    
+    if (snapshot.exists()) {
+      return {
+        id: snapshot.key!,
+        ...snapshot.val(),
+      };
+    } else {
+      return null;
+    }
   }
 
   // Listen to conversation status changes

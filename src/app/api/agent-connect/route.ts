@@ -20,29 +20,25 @@ export async function POST(request: NextRequest) {
     // Try to get conversation from Firebase first (persistent)
     let conversation: any = null
     try {
-      // Check Firebase Realtime Database
-      conversation = await new Promise((resolve, reject) => {
-        const unsubscribe = realtimeChatService.listenToConversation(conversationId, (conv) => {
-          unsubscribe() // Stop listening immediately
-          resolve(conv)
-        })
-        // Timeout after 5 seconds
-        setTimeout(() => {
-          unsubscribe()
-          reject(new Error('Firebase timeout'))
-        }, 5000)
-      })
+      console.log('🔍 Looking up conversation in Firebase:', conversationId)
+      
+      // Use direct read instead of listener for better reliability
+      conversation = await realtimeChatService.getConversation(conversationId)
       
       if (conversation) {
-        console.log('✅ Found conversation in Firebase:', conversationId)
+        console.log('✅ Found conversation in Firebase:', conversationId, 'Status:', conversation.status)
+      } else {
+        console.log('❌ Conversation not found in Firebase:', conversationId)
       }
     } catch (firebaseError) {
-      console.log('Firebase lookup failed, trying datastore fallback:', firebaseError)
+      console.log('🚨 Firebase lookup failed:', firebaseError instanceof Error ? firebaseError.message : 'Unknown error')
       
       // Fallback to in-memory datastore (for development)
       conversation = dataStore.getConversation(conversationId)
       if (conversation) {
         console.log('✅ Found conversation in datastore fallback:', conversationId)
+      } else {
+        console.log('❌ Conversation not found in datastore either:', conversationId)
       }
     }
     

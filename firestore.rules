@@ -1,0 +1,45 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Users collection - users can read/write their own data
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Businesses collection - relaxed for development
+    match /businesses/{businessId} {
+      allow read, write, create: if isAuthenticated();
+      
+      // Business settings subcollection
+      match /settings/{settingId} {
+        allow read, write, create: if isAuthenticated();
+      }
+    }
+    
+    // Conversations collection - relaxed for development
+    match /conversations/{conversationId} {
+      allow read, write, create: if true; // Open for widget integration
+      
+      // Messages subcollection
+      match /messages/{messageId} {
+        allow read, write, create: if true; // Open for widget integration
+      }
+    }
+    
+    // Analytics collection
+    match /analytics/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+
+  }
+} 

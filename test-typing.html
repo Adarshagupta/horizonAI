@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chat Widget Typing Indicators Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .instructions { background: #f0f8ff; border: 1px solid #0066cc; padding: 15px; margin-bottom: 20px; border-radius: 5px; }
+        .step { margin: 10px 0; }
+        .console-note { background: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; margin: 10px 0; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <h1>🔔 Chat Widget Typing Indicators Test</h1>
+    
+    <div class="instructions">
+        <h3>How to test typing indicators:</h3>
+        <div class="step">1. Open browser console (F12) to see debug messages</div>
+        <div class="step">2. Click the chat widget in bottom-right corner</div>
+        <div class="step">3. Start a conversation by entering name and email</div>
+        <div class="step">4. In another browser tab, open: <strong>http://localhost:3000/dashboard/conversations</strong></div>
+        <div class="step">5. Connect as an agent to the conversation</div>
+        <div class="step">6. Now type in either the customer widget OR agent dashboard</div>
+        <div class="step">7. You should see typing indicators appear on the other side!</div>
+        
+        <div class="console-note">
+            <strong>Console Debug Messages to Look For:</strong><br>
+            🎯 Starting typing status polling for conversation<br>
+            📤 Sending typing status<br>
+            ⌨️ User is typing: [Name]<br>
+            🙊 No one is typing
+        </div>
+    </div>
+    
+    <h2>Test Environment:</h2>
+    <p>✅ Widget configured for business: NsBoejWEdNN2eviiKYcD1Yh7qaZ2</p>
+    <p>✅ API URL: http://localhost:3000</p>
+    <p>✅ CORS configured for cross-origin testing</p>
+    
+    <script>
+      window.chatConfig = {
+        businessId: "NsBoejWEdNN2eviiKYcD1Yh7qaZ2",
+        enabled: true,
+        position: "bottom-right",
+        color: "#3B82F6"
+      };
+      
+      // Test console logging
+      console.log('🧪 Typing indicators test page loaded');
+      console.log('📍 Page origin:', window.location.origin);
+      console.log('🎯 Target API:', 'http://localhost:3000');
+    </script>
+    <script src="http://localhost:3000/widget.js" data-api-url="http://localhost:3000"></script>
+</body>
+</html> 

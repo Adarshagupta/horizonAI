@@ -1,0 +1,38 @@
+{
+  "rules": {
+    "conversations": {
+      "$conversationId": {
+        ".read": true,
+        ".write": true,
+        "messages": {
+          "$messageId": {
+            ".read": true,
+            ".write": true
+          }
+        }
+      }
+    },
+    "notifications": {
+      "$businessId": {
+        ".read": true,
+        ".write": true,
+        "agents": {
+          "$notificationId": {
+            ".read": true,
+            ".write": true
+          }
+        }
+      }
+    },
+    "presence": {
+      "$businessId": {
+        ".read": true,
+        ".write": true,
+        "$agentId": {
+          ".read": true,
+          ".write": true
+        }
+      }
+    }
+  }
+} 

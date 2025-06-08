@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { dataStore } from '@/lib/data-store'
 import { realtimeChatService } from '@/lib/realtime-chat'
+import { rtdb } from '@/lib/firebase'
+import { ref, get } from 'firebase/database'
 
 export async function GET(
   request: NextRequest,
@@ -10,7 +12,7 @@ export async function GET(
     const params = await context.params
     const conversationId = params.id
 
-    console.log('Getting conversation status for ID:', conversationId)
+    console.log('🔍 Getting conversation status for ID:', conversationId)
 
     if (!conversationId) {
       return NextResponse.json({ error: 'Missing conversation ID' }, { 
@@ -23,36 +25,75 @@ export async function GET(
       })
     }
 
-    // Try Firebase first (persistent), then fallback to dataStore
+    // Test direct Firebase access first
     let conversation = null
     let source = 'unknown'
+    
     try {
-      conversation = await realtimeChatService.getConversation(conversationId)
-      if (conversation) {
-        source = 'firebase'
-        console.log('✅ Found conversation in Firebase:', {
+      console.log('🔥 Testing direct Firebase access...')
+      const conversationRef = ref(rtdb, `conversations/${conversationId}`)
+      const snapshot = await get(conversationRef)
+      
+      if (snapshot.exists()) {
+        const data = snapshot.val()
+        conversation = {
+          id: snapshot.key!,
+          ...data,
+        }
+        source = 'firebase-direct'
+        console.log('✅ DIRECT Firebase access successful:', {
           id: conversation.id,
           status: conversation.status,
           assignedAgent: conversation.assignedAgent,
-          agentName: conversation.agentName
+          agentName: conversation.agentName,
+          businessId: conversation.businessId
         })
       } else {
-        console.log('❌ Conversation not found in Firebase, trying dataStore fallback')
+        console.log('❌ DIRECT Firebase: No data found')
+      }
+    } catch (directError) {
+      console.error('🚨 DIRECT Firebase access failed:', directError)
+    }
+
+    // If direct access failed, try through realtimeChatService
+    if (!conversation) {
+      try {
+        console.log('🔥 Testing via realtimeChatService...')
+        conversation = await realtimeChatService.getConversation(conversationId)
+        if (conversation) {
+          source = 'firebase-service'
+          console.log('✅ RealtimeChatService access successful:', {
+            id: conversation.id,
+            status: conversation.status,
+            assignedAgent: conversation.assignedAgent,
+            agentName: conversation.agentName
+          })
+        } else {
+          console.log('❌ RealtimeChatService: No data found')
+        }
+      } catch (serviceError) {
+        console.error('🚨 RealtimeChatService failed:', serviceError)
+      }
+    }
+
+    // Fallback to dataStore if Firebase completely fails
+    if (!conversation) {
+      try {
+        console.log('🔄 Trying dataStore fallback...')
         conversation = dataStore.getConversation(conversationId)
         if (conversation) {
-          source = 'data-store'
-          console.log('✅ Found conversation in dataStore fallback')
+          source = 'data-store-fallback'
+          console.log('✅ DataStore fallback successful')
+        } else {
+          console.log('❌ DataStore: No data found')
         }
-      }
-    } catch (firebaseError) {
-      console.log('🚨 Firebase lookup failed, using dataStore fallback:', firebaseError)
-      conversation = dataStore.getConversation(conversationId)
-      if (conversation) {
-        source = 'data-store-fallback'
+      } catch (datastoreError) {
+        console.error('🚨 DataStore fallback failed:', datastoreError)
       }
     }
     
     if (!conversation) {
+      console.log('❌ Conversation not found in any data source')
       return NextResponse.json({ error: 'Conversation not found' }, { 
         status: 404,
         headers: {
@@ -80,9 +121,14 @@ export async function GET(
         customerEmail: conversation.customerEmail,
         unreadCount: conversation.unreadCount
       },
-      source: source
+      source: source,
+      debug: {
+        foundIn: source,
+        timestamp: new Date().toISOString()
+      }
     }
 
+    console.log('✅ Returning conversation data from:', source)
     return NextResponse.json(response, {
       headers: {
         'Access-Control-Allow-Origin': '*',
@@ -92,7 +138,7 @@ export async function GET(
     })
 
   } catch (error) {
-    console.error('Conversation status API error:', error)
+    console.error('🚨 Conversation status API error:', error)
     return NextResponse.json(
       { error: 'Internal server error', message: String(error) },
       { status: 500 }

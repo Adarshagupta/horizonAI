@@ -4,11 +4,38 @@
   // Get business ID from script tag
   const currentScript = document.currentScript;
 
-  // Configuration
-  const WIDGET_CONFIG = {
-    apiUrl: currentScript?.getAttribute('data-api-url') || window.location.origin || 'http://localhost:3000',
-    version: '2.1.0' // Added typing indicators
+  // Configuration with multi-domain support
+  const getApiUrl = () => {
+    // If data-api-url is explicitly provided, use it
+    if (currentScript?.getAttribute('data-api-url')) {
+      return currentScript.getAttribute('data-api-url');
+    }
+    
+    // Auto-detect based on current domain
+    const currentOrigin = window.location.origin;
+    
+    // Support for known domains
+    if (currentOrigin.includes('horizon-ai-one.vercel.app')) {
+      return 'https://horizon-ai-one.vercel.app';
+    }
+    if (currentOrigin.includes('infin8t.net')) {
+      return 'https://infin8t.net';
+    }
+    if (currentOrigin.includes('localhost')) {
+      return 'http://localhost:3000';
+    }
+    
+    // Default fallback to current origin
+    return currentOrigin;
   };
+  
+  const WIDGET_CONFIG = {
+    apiUrl: getApiUrl(),
+    version: '2.2.0' // Added multi-domain support
+  };
+  
+  // Log the API URL being used for debugging
+  console.log('🌐 ChatSupport Widget - Using API URL:', WIDGET_CONFIG.apiUrl);
   const businessId = currentScript ? currentScript.getAttribute('data-business-id') : null;
   
   if (!businessId) {

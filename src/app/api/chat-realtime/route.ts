@@ -125,37 +125,47 @@ export async function POST(request: NextRequest) {
             read: false,
             messageType: 'text'
           })
+          console.log('✅ Message saved to Firebase successfully')
         } catch (dbError) {
-          console.log('Database write failed, saving to datastore instead:', dbError)
-          // Fallback: Save to in-memory datastore
-          try {
-            // Ensure conversation exists in datastore
-            let conversation = dataStore.getConversation(conversationId)
-            if (!conversation) {
-              conversation = dataStore.createConversation({
-                id: conversationId,
-                customerName: customerInfo.name,
-                customerEmail: customerInfo.email,
-                customerId: customerInfo.email,
-                businessId,
-                status: 'waiting',
-                priority: 'medium',
-                startedAt: Date.now(),
-                lastActivity: Date.now(),
-                unreadCount: 0
+          console.error('🚨 CRITICAL: Firebase write failed:', dbError)
+          // DO NOT fallback to in-memory store in production
+          // This causes the conversation persistence issues
+          
+          // Only use fallback in development for testing
+          if (process.env.NODE_ENV !== 'production') {
+            console.log('Development mode: Using datastore fallback')
+            try {
+              // Ensure conversation exists in datastore
+              let conversation = dataStore.getConversation(conversationId)
+              if (!conversation) {
+                conversation = dataStore.createConversation({
+                  id: conversationId,
+                  customerName: customerInfo.name,
+                  customerEmail: customerInfo.email,
+                  customerId: customerInfo.email,
+                  businessId,
+                  status: 'waiting',
+                  priority: 'medium',
+                  startedAt: Date.now(),
+                  lastActivity: Date.now(),
+                  unreadCount: 0
+                })
+              }
+              
+              // Add customer message to datastore
+              dataStore.addMessage(conversationId, {
+                content: message,
+                type: 'customer',
+                sender: customerInfo.name,
+                timestamp: Date.now(),
+                messageType: 'text'
               })
+            } catch (datastoreError) {
+              console.error('Failed to save to datastore as well:', datastoreError)
             }
-            
-            // Add customer message to datastore
-            dataStore.addMessage(conversationId, {
-              content: message,
-              type: 'customer',
-              sender: customerInfo.name,
-              timestamp: Date.now(),
-              messageType: 'text'
-            })
-          } catch (datastoreError) {
-            console.error('Failed to save to datastore as well:', datastoreError)
+          } else {
+            // In production, we need Firebase to work
+            throw new Error('Firebase database is required for production deployment')
           }
         }
 

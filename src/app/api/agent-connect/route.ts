@@ -17,9 +17,37 @@ export async function POST(request: NextRequest) {
 
     console.log('Agent connection request:', { conversationId, agentId, agentName })
 
-    // Get conversation from datastore
-    const conversation = dataStore.getConversation(conversationId)
+    // Try to get conversation from Firebase first (persistent)
+    let conversation: any = null
+    try {
+      // Check Firebase Realtime Database
+      conversation = await new Promise((resolve, reject) => {
+        const unsubscribe = realtimeChatService.listenToConversation(conversationId, (conv) => {
+          unsubscribe() // Stop listening immediately
+          resolve(conv)
+        })
+        // Timeout after 5 seconds
+        setTimeout(() => {
+          unsubscribe()
+          reject(new Error('Firebase timeout'))
+        }, 5000)
+      })
+      
+      if (conversation) {
+        console.log('✅ Found conversation in Firebase:', conversationId)
+      }
+    } catch (firebaseError) {
+      console.log('Firebase lookup failed, trying datastore fallback:', firebaseError)
+      
+      // Fallback to in-memory datastore (for development)
+      conversation = dataStore.getConversation(conversationId)
+      if (conversation) {
+        console.log('✅ Found conversation in datastore fallback:', conversationId)
+      }
+    }
+    
     if (!conversation) {
+      console.log('❌ Conversation not found in Firebase or datastore:', conversationId)
       return NextResponse.json(
         { error: 'Conversation not found' },
         { status: 404 }

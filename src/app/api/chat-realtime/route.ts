@@ -222,8 +222,12 @@ export async function POST(request: NextRequest) {
         finalCheck = dataStore.getConversation(conversationId)
       }
       
-      if (finalCheck && finalCheck.status === 'connected' && finalCheck.assignedAgent) {
-        console.log('🛑 Final check: Agent is connected, NOT generating AI response')
+      if (finalCheck && (finalCheck.status === 'connected' || finalCheck.agentConnected) && finalCheck.assignedAgent) {
+        console.log('🛑 Final check: Agent is connected, NOT generating AI response', {
+          status: finalCheck.status,
+          agentConnected: finalCheck.agentConnected,
+          assignedAgent: finalCheck.assignedAgent
+        })
         return NextResponse.json({
           success: true,
           messageDelivered: true,
@@ -245,7 +249,13 @@ export async function POST(request: NextRequest) {
           }
         })
       } else {
-        console.log('➡️ Final check: No agent connected, proceeding with AI response')
+        console.log('➡️ Final check: No agent connected, proceeding with AI response', {
+          finalCheck: finalCheck ? {
+            status: finalCheck.status,
+            agentConnected: finalCheck.agentConnected,
+            assignedAgent: finalCheck.assignedAgent
+          } : 'No conversation found'
+        })
       }
     }
 

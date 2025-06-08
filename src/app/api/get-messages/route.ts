@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { dataStore } from '@/lib/data-store'
 import { realtimeChatService } from '@/lib/realtime-chat'
+import { rtdb } from '@/lib/firebase'
+import { ref, get } from 'firebase/database'
 
 export async function GET(request: NextRequest) {
   try {
@@ -24,10 +26,18 @@ export async function GET(request: NextRequest) {
     
     try {
       console.log('🔥 Looking up conversation in Firebase:', conversationId)
-      conversation = await realtimeChatService.getConversation(conversationId)
-      if (conversation) {
-        source = 'firebase'
-        console.log('✅ Found conversation in Firebase')
+      // Use direct Firebase access like conversation-status API
+      const conversationRef = ref(rtdb, `conversations/${conversationId}`)
+      const snapshot = await get(conversationRef)
+      
+      if (snapshot.exists()) {
+        const data = snapshot.val()
+        conversation = {
+          id: snapshot.key!,
+          ...data,
+        }
+        source = 'firebase-direct'
+        console.log('✅ Found conversation via direct Firebase access')
         
         // Convert Firebase messages object to array
         if (conversation.messages && typeof conversation.messages === 'object') {

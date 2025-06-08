@@ -53,103 +53,37 @@ class DataStore {
   private tickets: Map<string, Map<string, Ticket>> = new Map() // businessId -> ticketId -> Ticket
   private businessConversations: Map<string, Set<string>> = new Map() // businessId -> Set of conversationIds
 
-  // Initialize with sample data for the known business
+  // Multi-tenant constructor - supports unlimited businesses dynamically
   constructor() {
-    this.initializeSampleData()
+    console.log('✅ DataStore initialized - ready for multi-tenant use')
   }
 
-  private initializeSampleData() {
-    // Support both business IDs for compatibility
-    const businessIds = [
-      'NsBoejWEdMN2ev1iKYcD1Yh7qaZ2',  // Correct ID
-      'NsBoejWEdNN2eviiKYcD1Yh7qaZ2'   // Common typo in widgets
-    ]
-    
-    businessIds.forEach(businessId => {
-      // Don't reinitialize if agents already exist for this business (to prevent data loss in dev mode)
-      if (this.agents.has(businessId)) {
-        console.log('✅ Skipping initialization - data already exists for business:', businessId)
-        return
-      }
-      // Create sample agents
+  // Dynamically ensure business exists when first accessed
+  private ensureBusinessExists(businessId: string) {
+    if (!this.agents.has(businessId)) {
+      console.log('🆕 Auto-initializing new business:', businessId)
+      
+      // Create default agents for new business
       const agents = new Map<string, Agent>()
       agents.set('agent_1', {
         id: 'agent_1',
-        name: 'John Smith',
-        status: 'online',
-        activeConversations: 1,
-        lastSeen: Date.now()
-      })
-      agents.set('agent_2', {
-        id: 'agent_2',
-        name: 'Sarah Johnson',
+        name: 'Support Agent',
         status: 'online',
         activeConversations: 0,
         lastSeen: Date.now()
-      })
-      agents.set('agent_3', {
-        id: 'agent_3',
-        name: 'Mike Wilson',
-        status: 'offline',
-        activeConversations: 0,
-        lastSeen: Date.now() - 3600000 // 1 hour ago
       })
       
       this.agents.set(businessId, agents)
-
-      // Create sample conversation (only for the main business ID to avoid duplicates)
-      if (businessId === 'NsBoejWEdMN2ev1iKYcD1Yh7qaZ2') {
-        const conversationId = 'conv_1749382446075_oei3le14q'
-        const conversation: Conversation = {
-          id: conversationId,
-          customerName: 'adarsh',
-          customerEmail: 'adarsh@example.com',
-          customerId: 'customer_123',
-          businessId,
-          status: 'waiting',
-          priority: 'medium',
-          assignedAgent: undefined,
-          agentName: undefined,
-          startedAt: 1749382446075,
-          lastActivity: Date.now(),
-          unreadCount: 2,
-          messages: [
-            {
-              id: 'msg_1',
-              content: 'Hello, I need help with my order',
-              type: 'customer',
-              sender: 'adarsh',
-              timestamp: 1749382446075,
-              messageType: 'text'
-            },
-            {
-              id: 'msg_2',
-              content: 'Can someone please assist me?',
-              type: 'customer',
-              sender: 'adarsh',
-              timestamp: Date.now() - 300000, // 5 minutes ago
-              messageType: 'text'
-            }
-          ]
-        }
-
-        this.conversations.set(conversationId, conversation)
-        
-        // Track business conversations
-        const businessConvs = new Set<string>()
-        businessConvs.add(conversationId)
-        this.businessConversations.set(businessId, businessConvs)
-      } else {
-        // Initialize empty conversations for other business IDs
-        this.businessConversations.set(businessId, new Set<string>())
-      }
-
-      console.log('✅ Sample data initialized for business:', businessId)
-    })
+      this.businessConversations.set(businessId, new Set<string>())
+      this.tickets.set(businessId, new Map<string, Ticket>())
+      
+      console.log('✅ Business auto-initialized:', businessId)
+    }
   }
 
   // Agent methods
   getAgents(businessId: string): Agent[] {
+    this.ensureBusinessExists(businessId)
     const businessAgents = this.agents.get(businessId)
     return businessAgents ? Array.from(businessAgents.values()) : []
   }
@@ -165,6 +99,7 @@ class DataStore {
 
   // Conversation methods
   getConversations(businessId: string): Conversation[] {
+    this.ensureBusinessExists(businessId)
     console.log('Getting conversations for business:', businessId)
     const conversationIds = this.businessConversations.get(businessId) || new Set()
     console.log('Found conversation IDs:', Array.from(conversationIds))
@@ -186,6 +121,7 @@ class DataStore {
   }
 
   createConversation(data: Omit<Conversation, 'messages'>): Conversation {
+    this.ensureBusinessExists(data.businessId)
     const conversation: Conversation = {
       ...data,
       messages: []

@@ -12,13 +12,33 @@ export async function GET(
     console.log('Getting conversation status for ID:', conversationId)
 
     if (!conversationId) {
-      return NextResponse.json({ error: 'Missing conversation ID' }, { status: 400 })
+      return NextResponse.json({ error: 'Missing conversation ID' }, { 
+        status: 400,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type',
+        }
+      })
     }
 
     const conversation = dataStore.getConversation(conversationId)
+    console.log('Found conversation:', conversation ? {
+      id: conversation.id,
+      status: conversation.status,
+      assignedAgent: conversation.assignedAgent,
+      agentName: conversation.agentName
+    } : 'NOT FOUND')
     
     if (!conversation) {
-      return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Conversation not found' }, { 
+        status: 404,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type',
+        }
+      })
     }
 
     const response = {

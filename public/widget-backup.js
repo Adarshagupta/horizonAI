@@ -752,19 +752,18 @@
       document.getElementById('chat-messages').style.display = 'block';
       document.getElementById('chat-input-container').style.display = 'block';
       
-      // Add welcome message
-      addMessage(config.welcomeMessage, 'ai', new Date(), 1.0);
+      // Show connecting to agent message
+      addMessage(
+        "🔄 Connecting you to a support agent... Please wait a moment.",
+        'system',
+        new Date(),
+        1.0
+      );
       
-      // Add personalized greeting
+      // Immediately request human agent
       setTimeout(() => {
-        addMessage(
-          `Hi ${name}! I'm your AI support assistant. I'm here to help you with any questions or issues you might have. What can I assist you with today?`,
-          'ai',
-          new Date(),
-          1.0,
-          ['Billing Question', 'Technical Issue', 'General Inquiry', 'Talk to Human']
-        );
-      }, 1000);
+        this.requestHumanAgent("Customer started conversation");
+      }, 500);
       
       // Focus on message input
       const messageInput = document.getElementById('message-input');
@@ -786,13 +785,6 @@
         document.getElementById('send-button').disabled = true;
       }
       
-      // Check if user wants to connect to human agent
-      if (content.toLowerCase().includes('human') || content.toLowerCase().includes('agent') || 
-          messageText === 'Yes, connect me' || messageText === 'Talk to Human') {
-        await this.requestHumanAgent(content);
-        return;
-      }
-      
       // Add user message with pending status
       const userMessage = addMessage(content, 'user', new Date(), null, [], 'pending');
       
@@ -800,8 +792,8 @@
       showTypingIndicator();
       
       try {
-        // Call AI service
-        const response = await fetch(`${WIDGET_CONFIG.apiUrl}/api/chat-realtime`, {
+        // Send directly to agent (human-to-human chat)
+        const response = await fetch(`${WIDGET_CONFIG.apiUrl}/api/agent-message`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -811,89 +803,43 @@
             businessId: businessId,
             conversationId: conversationId,
             customerInfo: customerInfo,
-            previousMessages: messages.slice(-5) // Send last 5 messages for context
+            customerMessage: true
           })
         });
-        
-        let aiResponse;
-        if (response.ok) {
-          aiResponse = await response.json();
-          
-                  // Update message status based on response
-        if (aiResponse.silent && aiResponse.messageDelivered) {
-          // Message was delivered to agent - update tick status
-          updateMessageStatus(userMessage.id, 'delivered');
-          
-          // If silent response, check if we need to update agent connection state
-          if (aiResponse.agentConnected && !widgetState.agentConnected) {
-            console.log('🔄 Agent connected detected via message response, updating widget state');
-            widgetState.agentConnected = true;
-            widgetState.agentName = aiResponse.agentName || 'Support Agent';
-            
-            // Update placeholder
-            const messageInput = document.getElementById('message-input');
-            if (messageInput) {
-              messageInput.placeholder = `Type your message to ${widgetState.agentName}...`;
-            }
-          }
-        } else if (aiResponse.agentConnected) {
-          // Agent is connected but responded - mark as delivered
-          updateMessageStatus(userMessage.id, 'delivered');
-        }
-        } else {
-          // Fallback to simple responses
-          aiResponse = this.getFallbackResponse(content);
-          updateMessageStatus(userMessage.id, 'delivered');
-        }
         
         // Hide typing indicator
         hideTypingIndicator();
         
-        // Only add AI response if it's not silent
-        console.log('🔍 AI Response debug:', {
-          silent: aiResponse.silent,
-          message: aiResponse.message,
-          needsHuman: aiResponse.needsHuman,
-          confidence: aiResponse.confidence,
-          agentConnected: aiResponse.agentConnected,
-          shouldAddMessage: !aiResponse.silent && aiResponse.message,
-          shouldShowHumanConnect: aiResponse.needsHuman || aiResponse.confidence < 0.6
-        });
-        
-        if (!aiResponse.silent && aiResponse.message) {
+        if (response.ok) {
+          const result = await response.json();
+          
+          // Update message status to delivered
+          updateMessageStatus(userMessage.id, 'delivered');
+          
+          // If agent responds immediately, no need to do anything - polling will handle it
+          console.log('✅ Message sent to agent successfully');
+        } else {
+          console.error('❌ Failed to send message to agent:', response.status);
+          
+          // Show error message to user
           addMessage(
-            aiResponse.message,
-            'ai',
+            "Sorry, there was an issue sending your message. Please try again or refresh the page.",
+            'system',
             new Date(),
-            aiResponse.confidence || 0.8,
-            aiResponse.suggestedActions || []
+            1.0
           );
-        }
-        
-        // Check if human agent is needed - SKIP if agent already connected
-        if (!aiResponse.agentConnected && (aiResponse.needsHuman || aiResponse.confidence < 0.6)) {
-          setTimeout(() => {
-            addMessage(
-              "Would you like me to connect you with a human agent for more personalized assistance?",
-              'ai',
-              new Date(),
-              1.0,
-              ['Yes, connect me', 'No, continue with AI', 'Talk to Human']
-            );
-          }, 2000);
         }
         
       } catch (error) {
         console.error('Error sending message:', error);
         hideTypingIndicator();
         
-        // Fallback response
+        // Show error message
         addMessage(
-          "I'm sorry, I'm having trouble connecting right now. Let me try to help you anyway. What specific issue are you experiencing?",
-          'ai',
+          "Sorry, there was a connection issue. Please check your internet and try again.",
+          'system',
           new Date(),
-          0.5,
-          ['Technical Support', 'Billing Help', 'Talk to Human']
+          1.0
         );
       }
     },
@@ -1230,285 +1176,4 @@
       }
       
       return {
-        message: `Thanks for your message! I'm here to help with any questions about our customer support platform. Could you provide a bit more detail about what you need assistance with?`,
-        confidence: 0.7,
-        suggestedActions: ['Technical help', 'Billing question', 'Feature info', 'Talk to human']
-      };
-    },
-
-    handleKeyPress: function(event) {
-      if (event.key === 'Enter') {
-        this.sendMessage();
-      }
-    },
-
-    // Typing indicator functions
-    handleTyping: function() {
-      if (!conversationId || !customerInfo) return;
-      
-      // Send typing start
-      this.sendTypingStatus(true);
-      
-      // Clear existing timeout
-      if (widgetState.typingTimeout) {
-        clearTimeout(widgetState.typingTimeout);
-      }
-      
-      // Set new timeout to stop typing after 2 seconds of inactivity
-      widgetState.typingTimeout = setTimeout(() => {
-        this.sendTypingStatus(false);
-      }, 2000);
-    },
-
-    sendTypingStatus: function(isTyping) {
-      if (!conversationId || !customerInfo) {
-        console.log('⚠️ Cannot send typing status - missing conversation or customer info');
-        return;
-      }
-      
-      const wasTyping = widgetState.isUserTyping;
-      widgetState.isUserTyping = isTyping;
-      
-      // Only send if status actually changed
-      if (wasTyping === isTyping) {
-        console.log('🔄 Typing status unchanged, skipping send');
-        return;
-      }
-      
-      console.log('📤 Sending typing status:', {
-        isTyping,
-        conversationId,
-        userName: customerInfo.name,
-        userId: customerInfo.email
-      });
-      
-      fetch(`${WIDGET_CONFIG.apiUrl}/api/typing-status`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          conversationId: conversationId,
-          userId: customerInfo.email,
-          userType: 'customer',
-          userName: customerInfo.name,
-          isTyping: isTyping
-        })
-      }).then(response => {
-        if (response.ok) {
-          console.log('✅ Typing status sent successfully');
-        } else {
-          console.error('❌ Failed to send typing status:', response.status);
-        }
-      }).catch(error => {
-        console.error('Error sending typing status:', error);
-      });
-    },
-
-    startTypingPolling: function() {
-      if (widgetState.isTypingPolling) {
-        console.log('🔄 Typing polling already active, skipping');
-        return;
-      }
-      
-      console.log('🎯 Starting typing status polling for conversation:', conversationId);
-      widgetState.isTypingPolling = true;
-      
-      const pollTypingStatus = async () => {
-        if (!conversationId || !customerInfo) {
-          console.log('⚠️ No conversation or customer info for typing polling');
-          return;
-        }
-        
-        try {
-          const url = `${WIDGET_CONFIG.apiUrl}/api/typing-status?conversationId=${conversationId}&excludeUserId=${customerInfo.email}`;
-          console.log('🔍 Polling typing status:', url);
-          
-          const response = await fetch(url);
-          
-          if (response.ok) {
-            const data = await response.json();
-            console.log('👁️ Typing status response:', data);
-            
-            if (data.typingUsers && data.typingUsers.length > 0) {
-              // Someone is typing - show indicator
-              const typingUser = data.typingUsers[0]; // Show first typing user
-              console.log('⌨️ User is typing:', typingUser.userName);
-              showTypingIndicator(typingUser.userName);
-            } else {
-              // No one is typing - hide indicator
-              console.log('🙊 No one is typing');
-              hideTypingIndicator();
-            }
-          } else {
-            console.error('❌ Typing status polling failed:', response.status);
-          }
-        } catch (error) {
-          console.error('Error polling typing status:', error);
-        }
-        
-        // Continue polling if widget is open
-        if (isOpen && conversationId && widgetState.isTypingPolling) {
-          setTimeout(pollTypingStatus, 1500); // Poll every 1.5 seconds
-        } else {
-          console.log('🛑 Stopping typing polling');
-          widgetState.isTypingPolling = false;
-        }
-      };
-      
-      // Start polling after a delay
-      setTimeout(pollTypingStatus, 1500);
-    },
-
-    markRecentUserMessagesAsRead: function() {
-      // Mark the last few customer messages as read (blue ticks) 
-      // when an agent responds
-      const recentUserMessages = messages
-        .filter(m => m.sender === 'user' && m.status !== 'read')
-        .slice(-3); // Mark last 3 unread user messages as read
-        
-      recentUserMessages.forEach(msg => {
-        updateMessageStatus(msg.id, 'read');
-      });
-    },
-
-    startMessagePolling: function() {
-      // Prevent multiple polling instances
-      if (widgetState.isPolling) {
-        console.log('🚨 Message polling already active, skipping duplicate');
-        return;
-      }
-      
-      widgetState.isPolling = true;
-      console.log('🔄 Starting message polling for conversation:', conversationId);
-      console.log('📊 Current messages in memory:', messages.length);
-      
-      // Track processed message IDs to avoid duplicates
-      let processedMessageIds = new Set(messages.map(m => m.id));
-      console.log('🎯 Starting with', processedMessageIds.size, 'processed message IDs');
-      
-      const pollForMessages = async () => {
-        try {
-          const response = await fetch(`${WIDGET_CONFIG.apiUrl}/api/get-messages?conversationId=${conversationId}`);
-          if (response.ok) {
-            const data = await response.json();
-            console.log('📊 API returned', data.messages?.length || 0, 'total messages');
-            
-            if (data.messages && data.messages.length > 0) {
-              // Process all messages from API, filter out duplicates
-              const newMessages = data.messages.filter(msg => 
-                !processedMessageIds.has(msg.id) && msg.content
-              );
-              
-              if (newMessages.length > 0) {
-                console.log('📨 New messages found:', newMessages.length);
-                
-                newMessages.forEach(msg => {
-                  console.log('🔍 Processing new message:', {
-                    id: msg.id,
-                    type: msg.type,
-                    content: msg.content?.substring(0, 30),
-                    sender: msg.sender
-                  });
-                  
-                  // Only add customer or agent messages (not AI)
-                  if (msg.type === 'customer' || msg.type === 'agent') {
-                    const sender = msg.type === 'customer' ? 'user' : 'agent';
-                    
-                    console.log('➕ Adding message:', msg.type, msg.content.substring(0, 50));
-                    
-                    addMessage(
-                      msg.content,
-                      sender,
-                      new Date(msg.timestamp),
-                      sender === 'agent' ? 1.0 : null,
-                      []
-                    );
-                    
-                    // Track this message as processed
-                    processedMessageIds.add(msg.id);
-                    
-                    // If this is an agent message, mark recent customer messages as read
-                    if (sender === 'agent') {
-                      ChatSupportWidget.markRecentUserMessagesAsRead();
-                      
-                      // Update widget state to show agent is connected
-                      if (!widgetState.agentConnected) {
-                        console.log('🔄 Agent detected via message polling, updating widget state');
-                        widgetState.agentConnected = true;
-                        widgetState.agentName = msg.sender || 'Support Agent';
-                        
-                        // Update placeholder
-                        const messageInput = document.getElementById('message-input');
-                        if (messageInput) {
-                          messageInput.placeholder = `Type your message to ${widgetState.agentName}...`;
-                        }
-                        
-                        console.log('✅ Widget state updated - agent connected:', widgetState.agentName);
-                      }
-                    }
-                  }
-                });
-              } else {
-                console.log('🙊 No new messages to process');
-              }
-            }
-          }
-        } catch (error) {
-          console.error('Error polling for messages:', error);
-        }
-        
-        // Continue polling if widget is open and conversation exists
-        if (isOpen && conversationId && widgetState.isPolling) {
-          setTimeout(pollForMessages, 2000);
-        } else {
-          widgetState.isPolling = false;
-          console.log('🛑 Stopping message polling');
-        }
-      };
-      
-      // Start polling after a delay
-      setTimeout(pollForMessages, 2000);
-    }
-  };
-
-  // Initialize widget
-  if (config.enabled) {
-    const initializeWidget = async () => {
-      createWidget();
-      
-      // Test CORS on load for debugging
-      console.log('🚀 ChatSupport Widget v' + WIDGET_CONFIG.version + ' loading...');
-      console.log('📍 Widget running from origin:', window.location.origin);
-      console.log('🎯 API target:', WIDGET_CONFIG.apiUrl);
-      
-      const corsWorking = await testCORS();
-      if (!corsWorking) {
-        console.warn('⚠️ CORS test failed - widget may not work properly from this domain');
-        console.warn('💡 Tip: Make sure your localhost server is running and accessible');
-      } else {
-        console.log('✅ Widget is ready and CORS is working!');
-      }
-    };
-    
-    // Wait for DOM to be ready
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', initializeWidget);
-    } else {
-      initializeWidget();
-    }
-  }
-
-  // Analytics tracking
-  try {
-    if (typeof gtag !== 'undefined') {
-      gtag('event', 'widget_loaded', {
-        business_id: businessId,
-        widget_version: WIDGET_CONFIG.version
-      });
-    }
-  } catch (e) {
-    // Analytics not available
-  }
-
-})(); 
+        message: `

@@ -98,14 +98,26 @@ export async function POST(request: NextRequest) {
     if (conversationId && customerInfo) {
       try {
         // Check if conversation already exists in Firebase
+        console.log('🔍 Checking for existing conversation:', conversationId)
         let existingConversation = null
         try {
           existingConversation = await realtimeChatService.getConversation(conversationId)
+          console.log('🔥 Firebase lookup result:', existingConversation ? 'FOUND' : 'NOT FOUND')
+          if (existingConversation) {
+            console.log('📋 Existing conversation details:', {
+              id: existingConversation.id,
+              status: existingConversation.status,
+              assignedAgent: existingConversation.assignedAgent,
+              agentName: existingConversation.agentName,
+              businessId: existingConversation.businessId
+            })
+          }
         } catch (error) {
-          console.log('Error checking existing conversation:', error)
+          console.error('🚨 Error checking existing conversation:', error)
         }
         
         const isNewConversation = !existingConversation
+        console.log('🎯 Decision:', isNewConversation ? 'CREATE NEW' : 'USE EXISTING')
         
         if (isNewConversation) {
           console.log('🆕 Creating new conversation:', conversationId)
@@ -119,7 +131,7 @@ export async function POST(request: NextRequest) {
             priority: 'medium'
           })
         } else {
-          console.log('✅ Using existing conversation:', conversationId, 'Status:', existingConversation.status)
+          console.log('✅ Using existing conversation:', conversationId, 'Status:', existingConversation?.status)
         }
 
         // Send customer message to realtime database
@@ -187,15 +199,26 @@ export async function POST(request: NextRequest) {
 
     // Check again if agent is connected before generating AI response
     if (conversationId) {
+      console.log('🔄 Final agent check for conversation:', conversationId)
       // Check Firebase first, then dataStore fallback
       let finalCheck = null
       try {
         finalCheck = await realtimeChatService.getConversation(conversationId)
-        if (!finalCheck) {
+        if (finalCheck) {
+          console.log('🔥 Final check - Found in Firebase:', {
+            status: finalCheck.status,
+            assignedAgent: finalCheck.assignedAgent,
+            agentName: finalCheck.agentName
+          })
+        } else {
+          console.log('❌ Final check - Not found in Firebase, trying dataStore')
           finalCheck = dataStore.getConversation(conversationId)
+          if (finalCheck) {
+            console.log('🔄 Final check - Found in dataStore fallback')
+          }
         }
       } catch (error) {
-        console.log('Error in final agent check, using dataStore:', error)
+        console.error('🚨 Error in final agent check, using dataStore:', error)
         finalCheck = dataStore.getConversation(conversationId)
       }
       
@@ -221,6 +244,8 @@ export async function POST(request: NextRequest) {
             'Access-Control-Allow-Headers': 'Content-Type',
           }
         })
+      } else {
+        console.log('➡️ Final check: No agent connected, proceeding with AI response')
       }
     }
 

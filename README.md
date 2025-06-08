@@ -395,3 +395,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 For more information, visit [https://chatsupport-ai.com](https://chatsupport-ai.com)
 # horizonAI
+# ChatSupport AI - Production Ready

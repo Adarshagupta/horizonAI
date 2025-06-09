@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { dataStore } from '@/lib/data-store'
+import { rtdb } from '@/lib/firebase'
+import { ref, get } from 'firebase/database'
 
 export async function GET(
   request: NextRequest,
@@ -16,41 +17,67 @@ export async function GET(
       )
     }
 
-    console.log('Fetching messages for conversation:', conversationId)
+    console.log('🔍 Fetching messages for conversation:', conversationId)
 
-    // Get conversation from data store
-    const conversation = dataStore.getConversation(conversationId)
+    // Get conversation from Firebase
+    const conversationRef = ref(rtdb, `conversations/${conversationId}`)
+    const conversationSnapshot = await get(conversationRef)
     
-    if (!conversation) {
+    if (!conversationSnapshot.exists()) {
       return NextResponse.json(
         { error: 'Conversation not found' },
         { status: 404 }
       )
     }
 
-    console.log(`Found ${conversation.messages.length} messages for conversation ${conversationId}`)
+    const conversation = conversationSnapshot.val()
+
+    // Get messages from Firebase
+    const messagesRef = ref(rtdb, `messages/${conversationId}`)
+    const messagesSnapshot = await get(messagesRef)
+    
+    let messages: any[] = []
+    if (messagesSnapshot.exists()) {
+      const messagesData = messagesSnapshot.val()
+      messages = Object.values(messagesData).sort((a: any, b: any) => a.timestamp - b.timestamp)
+    }
+
+    console.log(`✅ Found ${messages.length} messages for conversation ${conversationId}`)
     
     return NextResponse.json({
-      messages: conversation.messages,
+      messages: messages,
       conversation: {
-        id: conversation.id,
+        id: conversationId,
         customerName: conversation.customerName,
         status: conversation.status,
         lastActivity: conversation.lastActivity
       },
-      source: 'data-store',
-      count: conversation.messages.length
+      source: 'firebase',
+      count: messages.length
+    }, {
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+      }
     })
 
   } catch (error) {
-    console.error('Messages API error:', error)
+    console.error('🚨 Messages API error:', error)
     
     return NextResponse.json(
       {
         error: 'Failed to fetch messages',
         message: error instanceof Error ? error.message : 'Unknown error'
       },
-      { status: 500 }
+      { 
+        status: 500,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type',
+        }
+      }
     )
   }
 }

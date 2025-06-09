@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { dataStore } from '@/lib/data-store'
+import { realtimeChatService } from '@/lib/realtime-chat'
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,46 +14,53 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log('Sending message:', { conversationId, senderInfo: senderInfo.name, messageLength: message.length })
+    console.log('🔄 Sending message:', { conversationId, senderInfo: senderInfo.name, messageLength: message.length })
 
-    // Check if conversation exists
-    const conversation = dataStore.getConversation(conversationId)
+    // Check if conversation exists in Firebase
+    const conversation = await realtimeChatService.getConversation(conversationId)
     if (!conversation) {
+      console.log('❌ Conversation not found in Firebase:', conversationId)
       return NextResponse.json(
         { error: 'Conversation not found' },
         { status: 404 }
       )
     }
 
-    // Add message to conversation
-    const newMessage = dataStore.addMessage(conversationId, {
+    console.log('✅ Found conversation in Firebase:', conversationId)
+
+    // Send message to Firebase
+    const messageId = await realtimeChatService.sendMessage(conversationId, {
+      conversationId,
       content: message,
-      type: senderInfo.type || 'agent',
-      sender: senderInfo.name || 'Agent',
-      timestamp: Date.now(),
+      sender: {
+        id: senderInfo.id || 'agent',
+        name: senderInfo.name || 'Agent',
+        type: senderInfo.type || 'agent'
+      },
+      read: false,
       messageType
     })
 
+    console.log('✅ Message sent to Firebase with ID:', messageId)
+
     // Update conversation status if agent is connecting for first time
     if (senderInfo.type === 'agent' && conversation.status === 'waiting') {
-      dataStore.updateConversationStatus(conversationId, 'connected')
-      dataStore.assignAgent(conversationId, senderInfo.id || 'agent', senderInfo.name || 'Agent')
-      
-      console.log('Agent connected to conversation:', conversationId)
+      await realtimeChatService.connectAgent(conversationId, senderInfo.id || 'agent', senderInfo.name || 'Agent')
+      console.log('✅ Agent connected to conversation:', conversationId)
     }
 
     const response = {
       success: true,
       message: 'Message sent successfully',
-      messageId: newMessage.id,
+      messageId,
       conversationId,
-      timestamp: newMessage.timestamp,
+      timestamp: Date.now(),
       metadata: {
         senderName: senderInfo.name,
         senderType: senderInfo.type,
         conversationStatus: conversation.status
       },
-      source: 'data-store'
+      source: 'firebase'
     }
 
     return NextResponse.json(response, {
@@ -65,10 +72,17 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('Send message API error:', error)
+    console.error('🚨 Send message API error:', error)
     return NextResponse.json(
       { error: 'Failed to send message', message: String(error) },
-      { status: 500 }
+      { 
+        status: 500,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'POST, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type',
+        }
+      }
     )
   }
 }

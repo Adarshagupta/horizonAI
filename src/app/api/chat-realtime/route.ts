@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { generateAIResponse, shouldTransferToHuman, detectUrgency } from '@/lib/gemini'
 import { realtimeChatService } from '@/lib/realtime-chat'
-import { dataStore } from '@/lib/data-store'
 
 export async function POST(request: NextRequest) {
   try {
@@ -22,57 +21,62 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log('Realtime chat request:', { conversationId, businessId, customerInfo, messagePreview: message.substring(0, 30) })
+    console.log('🔄 Realtime chat request:', { conversationId, businessId, customerInfo, messagePreview: message.substring(0, 30) })
 
-    // Check if an agent is already connected to this conversation
+    // Check if an agent is already connected to this conversation via Firebase
     if (conversationId) {
-      const existingConversation = dataStore.getConversation(conversationId)
-      console.log('🔍 Checking existing conversation:', {
-        conversationId,
-        exists: !!existingConversation,
-        status: existingConversation?.status,
-        assignedAgent: existingConversation?.assignedAgent,
-        agentName: existingConversation?.agentName
-      })
-      
-      if (existingConversation && existingConversation.status === 'connected' && existingConversation.assignedAgent) {
-        console.log('✅ Agent already connected to conversation, saving customer message only')
+      try {
+        const existingConversation = await realtimeChatService.getConversation(conversationId)
+        console.log('🔍 Checking existing conversation in Firebase:', {
+          conversationId,
+          exists: !!existingConversation,
+          status: existingConversation?.status,
+          assignedAgent: existingConversation?.assignedAgent,
+          agentName: existingConversation?.agentName
+        })
         
-        // Just save the customer message - don't generate AI response
-        try {
-          dataStore.addMessage(conversationId, {
+        if (existingConversation && existingConversation.status === 'connected' && existingConversation.assignedAgent) {
+          console.log('✅ Agent already connected to conversation, saving customer message only')
+          
+          // Just save the customer message to Firebase - don't generate AI response
+          await realtimeChatService.sendMessage(conversationId, {
+            conversationId,
             content: message,
-            type: 'customer',
-            sender: customerInfo?.name || 'Customer',
-            timestamp: Date.now(),
+            sender: {
+              id: 'customer',
+              name: customerInfo?.name || 'Customer',
+              type: 'customer'
+            },
+            read: false,
             messageType: 'text'
           })
-        } catch (error) {
-          console.error('Failed to save customer message:', error)
-        }
+          console.log('✅ Customer message saved to Firebase')
 
-        return NextResponse.json({
-          success: true,
-          messageDelivered: true,
-          silent: true, // Don't show as a message bubble
-          agentConnected: true,
-          agentName: existingConversation.agentName,
-          metadata: {
-            responseTime: Date.now(),
-            businessId,
-            conversationId,
+          return NextResponse.json({
+            success: true,
+            messageDelivered: true,
+            silent: true, // Don't show as a message bubble
             agentConnected: true,
-            messageStatus: 'delivered'
-          }
-        }, {
-          headers: {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type',
-          }
-        })
-      } else {
-        console.log('❌ Agent check failed - will continue with AI response')
+            agentName: existingConversation.agentName,
+            metadata: {
+              responseTime: Date.now(),
+              businessId,
+              conversationId,
+              agentConnected: true,
+              messageStatus: 'delivered'
+            }
+          }, {
+            headers: {
+              'Access-Control-Allow-Origin': '*',
+              'Access-Control-Allow-Methods': 'POST, OPTIONS',
+              'Access-Control-Allow-Headers': 'Content-Type',
+            }
+          })
+        } else {
+          console.log('❌ Agent check failed - will continue with AI response')
+        }
+      } catch (error) {
+        console.error('Error checking agent connection via Firebase:', error)
       }
     }
 
@@ -115,21 +119,17 @@ export async function POST(request: NextRequest) {
       try {
         // Check if conversation already exists in Firebase
         console.log('🔍 Checking for existing conversation:', conversationId)
-        let existingConversation = null
-        try {
-          existingConversation = await realtimeChatService.getConversation(conversationId)
-          console.log('🔥 Firebase lookup result:', existingConversation ? 'FOUND' : 'NOT FOUND')
-          if (existingConversation) {
-            console.log('📋 Existing conversation details:', {
-              id: existingConversation.id,
-              status: existingConversation.status,
-              assignedAgent: existingConversation.assignedAgent,
-              agentName: existingConversation.agentName,
-              businessId: existingConversation.businessId
-            })
-          }
-        } catch (error) {
-          console.error('🚨 Error checking existing conversation:', error)
+        const existingConversation = await realtimeChatService.getConversation(conversationId)
+        console.log('🔥 Firebase lookup result:', existingConversation ? 'FOUND' : 'NOT FOUND')
+        
+        if (existingConversation) {
+          console.log('📋 Existing conversation details:', {
+            id: existingConversation.id,
+            status: existingConversation.status,
+            assignedAgent: existingConversation.assignedAgent,
+            agentName: existingConversation.agentName,
+            businessId: existingConversation.businessId
+          })
         }
         
         const isNewConversation = !existingConversation
@@ -150,128 +150,73 @@ export async function POST(request: NextRequest) {
           console.log('✅ Using existing conversation:', conversationId, 'Status:', existingConversation?.status)
         }
 
-        // Send customer message to realtime database
-        try {
-          await realtimeChatService.sendMessage(conversationId, {
-            conversationId,
-            content: message,
-            sender: {
-              id: 'customer',
-              name: customerInfo.name,
-              type: 'customer'
-            },
-            read: false,
-            messageType: 'text'
-          })
-          console.log('✅ Message saved to Firebase successfully')
-        } catch (dbError) {
-          console.error('🚨 CRITICAL: Firebase write failed:', dbError)
-          // DO NOT fallback to in-memory store in production
-          // This causes the conversation persistence issues
-          
-          // Only use fallback in development for testing
-          if (process.env.NODE_ENV !== 'production') {
-            console.log('Development mode: Using datastore fallback')
-            try {
-              // Ensure conversation exists in datastore
-              let conversation = dataStore.getConversation(conversationId)
-              if (!conversation) {
-                conversation = dataStore.createConversation({
-                  id: conversationId,
-                  customerName: customerInfo.name,
-                  customerEmail: customerInfo.email,
-                  customerId: customerInfo.email,
-                  businessId,
-                  status: 'waiting',
-                  priority: 'medium',
-                  startedAt: Date.now(),
-                  lastActivity: Date.now(),
-                  unreadCount: 0
-                })
-              }
-              
-              // Add customer message to datastore
-              dataStore.addMessage(conversationId, {
-                content: message,
-                type: 'customer',
-                sender: customerInfo.name,
-                timestamp: Date.now(),
-                messageType: 'text'
-              })
-            } catch (datastoreError) {
-              console.error('Failed to save to datastore as well:', datastoreError)
-            }
-          } else {
-            // In production, we need Firebase to work
-            throw new Error('Firebase database is required for production deployment')
-          }
-        }
+        // Send customer message to Firebase
+        await realtimeChatService.sendMessage(conversationId, {
+          conversationId,
+          content: message,
+          sender: {
+            id: 'customer',
+            name: customerInfo.name,
+            type: 'customer'
+          },
+          read: false,
+          messageType: 'text'
+        })
+        console.log('✅ Message saved to Firebase successfully')
 
-      } catch (realtimeError) {
-        console.error('Realtime database error:', realtimeError)
-        // Continue with AI response even if realtime fails
+      } catch (error) {
+        console.error('🚨 CRITICAL: Firebase operation failed:', error)
+        // In production, Firebase is required
+        throw new Error('Firebase database is required for operation')
       }
     }
 
     // Check again if agent is connected before generating AI response
     if (conversationId) {
       console.log('🔄 Final agent check for conversation:', conversationId)
-      // Check Firebase first, then dataStore fallback
-      let finalCheck = null
       try {
-        finalCheck = await realtimeChatService.getConversation(conversationId)
+        const finalCheck = await realtimeChatService.getConversation(conversationId)
         if (finalCheck) {
           console.log('🔥 Final check - Found in Firebase:', {
             status: finalCheck.status,
             assignedAgent: finalCheck.assignedAgent,
             agentName: finalCheck.agentName
           })
-        } else {
-          console.log('❌ Final check - Not found in Firebase, trying dataStore')
-          finalCheck = dataStore.getConversation(conversationId)
-          if (finalCheck) {
-            console.log('🔄 Final check - Found in dataStore fallback')
+          
+          if (finalCheck.status === 'connected' || finalCheck.assignedAgent) {
+            console.log('🛑 Final check: Agent is connected, NOT generating AI response', {
+              status: finalCheck.status,
+              agentConnected: !!finalCheck.assignedAgent,
+              assignedAgent: finalCheck.assignedAgent
+            })
+            return NextResponse.json({
+              success: true,
+              messageDelivered: true,
+              silent: true,
+              agentConnected: true,
+              agentName: finalCheck.agentName,
+              metadata: {
+                responseTime: Date.now(),
+                businessId,
+                conversationId,
+                agentConnected: true,
+                messageStatus: 'delivered'
+              }
+            }, {
+              headers: {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type',
+              }
+            })
+          } else {
+            console.log('➡️ Final check: No agent connected, proceeding with AI response')
           }
+        } else {
+          console.log('❌ Final check: No conversation found in Firebase')
         }
       } catch (error) {
-        console.error('🚨 Error in final agent check, using dataStore:', error)
-        finalCheck = dataStore.getConversation(conversationId)
-      }
-      
-      if (finalCheck && (finalCheck.status === 'connected' || finalCheck.assignedAgent)) {
-        console.log('🛑 Final check: Agent is connected, NOT generating AI response', {
-          status: finalCheck.status,
-          agentConnected: !!finalCheck.assignedAgent,
-          assignedAgent: finalCheck.assignedAgent
-        })
-        return NextResponse.json({
-          success: true,
-          messageDelivered: true,
-          silent: true,
-          agentConnected: true,
-          agentName: finalCheck.agentName,
-          metadata: {
-            responseTime: Date.now(),
-            businessId,
-            conversationId,
-            agentConnected: true,
-            messageStatus: 'delivered'
-          }
-        }, {
-          headers: {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type',
-          }
-        })
-      } else {
-        console.log('➡️ Final check: No agent connected, proceeding with AI response', {
-          finalCheck: finalCheck ? {
-            status: finalCheck.status,
-            agentConnected: !!finalCheck.assignedAgent,
-            assignedAgent: finalCheck.assignedAgent
-          } : 'No conversation found'
-        })
+        console.error('🚨 Error in final agent check:', error)
       }
     }
 
@@ -286,36 +231,21 @@ export async function POST(request: NextRequest) {
       businessType: 'Customer Support Platform'
     })
 
-    // Send AI response to realtime database
+    // Send AI response to Firebase
     if (conversationId) {
       try {
-        try {
-          await realtimeChatService.sendMessage(conversationId, {
-            conversationId,
-            content: aiResponse.message,
-            sender: {
-              id: 'ai',
-              name: 'AI Assistant',
-              type: 'ai'
-            },
-            read: false,
-            messageType: 'text'
-          })
-        } catch (dbError) {
-          console.log('AI response database write failed, saving to datastore instead:', dbError)
-          // Fallback: Save AI response to in-memory datastore
-          try {
-            dataStore.addMessage(conversationId, {
-              content: aiResponse.message,
-              type: 'agent', // AI responses appear as agent messages in datastore
-              sender: 'AI Assistant',
-              timestamp: Date.now(),
-              messageType: 'text'
-            })
-          } catch (datastoreError) {
-            console.error('Failed to save AI response to datastore:', datastoreError)
-          }
-        }
+        await realtimeChatService.sendMessage(conversationId, {
+          conversationId,
+          content: aiResponse.message,
+          sender: {
+            id: 'ai',
+            name: 'AI Assistant',
+            type: 'ai'
+          },
+          read: false,
+          messageType: 'text'
+        })
+        console.log('✅ AI response saved to Firebase')
 
         // Create notification if confidence is low or urgency is high
         if (aiResponse.confidence < 0.6 || urgency === 'high') {
@@ -326,8 +256,9 @@ export async function POST(request: NextRequest) {
           }
         }
 
-      } catch (realtimeError) {
-        console.error('Error sending AI response to realtime:', realtimeError)
+      } catch (error) {
+        console.error('🚨 Error sending AI response to Firebase:', error)
+        throw new Error('Failed to save AI response to database')
       }
     }
 
@@ -342,21 +273,21 @@ export async function POST(request: NextRequest) {
         responseTime: Date.now(),
         businessId,
         conversationId,
-        realtime: true
+        realtime: true,
+        source: 'firebase'
       }
     }
 
-    // Add CORS headers for cross-origin requests
-    const headers = {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
-    }
-
-    return NextResponse.json(response, { headers })
+    return NextResponse.json(response, {
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+      }
+    })
 
   } catch (error) {
-    console.error('Realtime chat API error:', error)
+    console.error('🚨 Realtime chat API error:', error)
     
     return NextResponse.json(
       {

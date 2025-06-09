@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { dataStore } from '@/lib/data-store'
+import { realtimeChatService } from '@/lib/realtime-chat'
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,123 +14,87 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log('Agent request:', { conversationId, businessId, customerInfo })
+    console.log('🔄 Agent request for conversation:', conversationId, 'Business:', businessId)
 
-    // Check if conversation exists, create if not
-    let conversation = dataStore.getConversation(conversationId)
+    // Check if conversation exists in Firebase, create if not
+    let conversation = await realtimeChatService.getConversation(conversationId)
+    
     if (!conversation) {
-      conversation = dataStore.createConversation({
-        id: conversationId,
+      console.log('🆕 Creating new conversation in Firebase:', conversationId)
+      await realtimeChatService.createConversation(conversationId, {
+        businessId,
+        customerId: customerInfo.email || `customer_${Date.now()}`,
         customerName: customerInfo.name || 'Customer',
         customerEmail: customerInfo.email || 'customer@example.com',
-        customerId: `customer_${Date.now()}`,
-        businessId,
         status: 'waiting',
-        priority: 'medium',
-        startedAt: Date.now(),
-        lastActivity: Date.now(),
-        unreadCount: 0
+        unreadCount: 0,
+        priority: 'medium'
       })
-      console.log('Created new conversation:', conversationId)
-    }
-
-    // Check agent availability from data store and assign an agent
-    const agents = dataStore.getAgents(businessId)
-    
-    let availableAgents = 0
-    let assignedAgent = null
-    
-    // Find and assign the best available agent
-    for (const agent of agents) {
-      if (agent.status === 'online' && agent.activeConversations < 5) {
-        availableAgents++
-        
-        // Assign the agent with the fewest active conversations
-        if (!assignedAgent || agent.activeConversations < assignedAgent.activeConversations) {
-          assignedAgent = agent
-        }
-      }
-    }
-
-    // Assign the agent to the conversation
-    if (assignedAgent) {
-      dataStore.assignAgent(conversationId, assignedAgent.id, assignedAgent.name)
-      console.log(`✅ Assigned agent ${assignedAgent.name} (${assignedAgent.id}) to conversation ${conversationId}`)
       
-      // Increment agent's active conversation count
-      assignedAgent.activeConversations++
+      conversation = await realtimeChatService.getConversation(conversationId)
+      console.log('✅ Conversation created in Firebase successfully')
     } else {
-      console.log('⏳ No agents available, conversation will remain in waiting status')
+      console.log('✅ Found existing conversation in Firebase:', conversationId)
     }
 
-    // Add message to conversation if provided
-    if (message) {
-      try {
-        dataStore.addMessage(conversationId, {
-          content: message,
-          type: 'customer',
-          sender: customerInfo.name || 'Customer',
-          timestamp: Date.now(),
-          messageType: 'text'
-        })
-      } catch (error) {
-        console.error('Error adding message:', error)
-        // Continue even if message addition fails
-      }
-    }
-
-    // Don't set to waiting here - let agent assignment handle the status
-
-    // Add system message about agent request
-    try {
-      dataStore.addMessage(conversationId, {
-        content: 'Agent requested - connecting you to the next available agent...',
-        type: 'system',
-        sender: 'System',
-        timestamp: Date.now(),
+    // Add customer message to Firebase if provided
+    if (message && message.trim()) {
+      await realtimeChatService.sendMessage(conversationId, {
+        conversationId,
+        content: message,
+        sender: {
+          id: 'customer',
+          name: customerInfo.name || 'Customer',
+          type: 'customer'
+        },
+        read: false,
         messageType: 'text'
       })
-    } catch (error) {
-      console.error('Error adding system message:', error)
-      // Continue even if system message fails
+      console.log('✅ Customer message saved to Firebase')
     }
 
-    // Calculate estimated wait time based on available agents
-    let estimatedWaitTime = '5-10 minutes'
-    if (availableAgents >= 3) {
-      estimatedWaitTime = '1-3 minutes'
-    } else if (availableAgents === 2) {
-      estimatedWaitTime = '2-5 minutes'
-    } else if (availableAgents === 1) {
-      estimatedWaitTime = '3-7 minutes'
-    }
+    // Add system message about agent request to Firebase
+    await realtimeChatService.sendMessage(conversationId, {
+      conversationId,
+      content: 'Agent requested - connecting you to the next available agent...',
+      sender: {
+        id: 'system',
+        name: 'System',
+        type: 'ai'
+      },
+      read: false,
+      messageType: 'system'
+    })
+    console.log('✅ System message saved to Firebase')
+
+    // Use Firebase to create agent notification
+    await realtimeChatService.createAgentNotification(conversationId, 'human_requested')
+    console.log('✅ Agent notification created in Firebase')
 
     const response = {
       success: true,
       message: 'Human agent requested successfully',
       conversationId,
-      estimatedWaitTime,
+      estimatedWaitTime: '2-5 minutes',
       businessHours: '24/7 Support Available',
-      availableAgents,
       metadata: {
         requestTime: Date.now(),
         businessId,
         customerName: customerInfo.name
       },
-      source: 'data-store'
+      source: 'firebase'
     }
 
-    // Add CORS headers
-    const headers = {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
-    }
-
-    return NextResponse.json(response, { headers })
+    return NextResponse.json(response, {
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+      }
+    })
 
   } catch (error) {
-    console.error('Request agent API error:', error)
+    console.error('🚨 Request agent API error:', error)
     
     return NextResponse.json(
       {

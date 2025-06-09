@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { dataStore } from '@/lib/data-store'
 import { realtimeChatService } from '@/lib/realtime-chat'
 
 export async function POST(request: NextRequest) {
@@ -15,40 +14,20 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log('Agent connection request:', { conversationId, agentId, agentName })
+    console.log('🔄 Agent connection request:', { conversationId, agentId, agentName })
 
-    // Try to get conversation from Firebase first (persistent)
-    let conversation: any = null
-    try {
-      console.log('🔍 Looking up conversation in Firebase:', conversationId)
-      
-      // Use direct read instead of listener for better reliability
-      conversation = await realtimeChatService.getConversation(conversationId)
-      
-      if (conversation) {
-        console.log('✅ Found conversation in Firebase:', conversationId, 'Status:', conversation.status)
-      } else {
-        console.log('❌ Conversation not found in Firebase:', conversationId)
-      }
-    } catch (firebaseError) {
-      console.log('🚨 Firebase lookup failed:', firebaseError instanceof Error ? firebaseError.message : 'Unknown error')
-      
-      // Fallback to in-memory datastore (for development)
-      conversation = dataStore.getConversation(conversationId)
-      if (conversation) {
-        console.log('✅ Found conversation in datastore fallback:', conversationId)
-      } else {
-        console.log('❌ Conversation not found in datastore either:', conversationId)
-      }
-    }
+    // Get conversation from Firebase (required)
+    const conversation = await realtimeChatService.getConversation(conversationId)
     
     if (!conversation) {
-      console.log('❌ Conversation not found in Firebase or datastore:', conversationId)
+      console.log('❌ Conversation not found in Firebase:', conversationId)
       return NextResponse.json(
         { error: 'Conversation not found' },
         { status: 404 }
       )
     }
+
+    console.log('✅ Found conversation in Firebase:', conversationId, 'Status:', conversation.status)
 
     // Check if conversation is already assigned to another agent
     if (conversation.assignedAgent && conversation.assignedAgent !== agentId) {
@@ -62,52 +41,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    try {
-      // Try to connect via Firebase Realtime Database
-      await realtimeChatService.connectAgent(conversationId, agentId, agentName)
-      console.log('✅ Agent connected via Firebase Realtime Database')
-    } catch (realtimeError) {
-      console.log('Firebase connection failed, using datastore fallback:', realtimeError)
-    }
+    // Connect agent via Firebase
+    await realtimeChatService.connectAgent(conversationId, agentId, agentName)
+    console.log('✅ Agent connected via Firebase')
 
-    // Always update datastore as fallback/backup
-    dataStore.assignAgent(conversationId, agentId, agentName)
-    dataStore.updateConversationStatus(conversationId, 'connected')
-    
-    // Debug: Check conversation state after assignment
-    const updatedConversation = dataStore.getConversation(conversationId)
-    console.log('🔧 Conversation state after agent assignment:', {
-      conversationId,
-      status: updatedConversation?.status,
-      assignedAgent: updatedConversation?.assignedAgent,
-      agentName: updatedConversation?.agentName
-    })
-
-    // Add system message about agent joining
-    const systemMessage = dataStore.addMessage(conversationId, {
-      content: `${agentName} has joined the conversation`,
-      type: 'system',
-      sender: 'System',
-      timestamp: Date.now(),
-      messageType: 'text'
-    })
-
-    // Add agent greeting message
-    const greetingMessage = dataStore.addMessage(conversationId, {
-      content: `Hi ${conversation.customerName}! I'm ${agentName}, and I'm here to help you. I can see you were chatting with our AI assistant. How can I assist you further?`,
-      type: 'agent',
-      sender: agentName,
-      timestamp: Date.now() + 1000, // 1 second later
-      messageType: 'text'
-    })
-
-    // Update agent status to show they have an active conversation
-    const businessId = conversation.businessId
-    const agents = dataStore.getAgents(businessId)
-    const agent = agents.find(a => a.id === agentId)
-    if (agent) {
-      agent.activeConversations++
-    }
+    // Get updated conversation to return current state
+    const updatedConversation = await realtimeChatService.getConversation(conversationId)
 
     const response = {
       success: true,
@@ -117,26 +56,24 @@ export async function POST(request: NextRequest) {
       agentName,
       status: 'connected',
       customerName: conversation.customerName,
-      systemMessage: systemMessage,
-      greetingMessage: greetingMessage,
       metadata: {
         connectionTime: Date.now(),
         previousStatus: conversation.status,
         businessId: conversation.businessId
+      },
+      source: 'firebase'
+    }
+
+    return NextResponse.json(response, {
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
       }
-    }
-
-    // Add CORS headers
-    const headers = {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
-    }
-
-    return NextResponse.json(response, { headers })
+    })
 
   } catch (error) {
-    console.error('Agent connect API error:', error)
+    console.error('🚨 Agent connect API error:', error)
     
     return NextResponse.json(
       {

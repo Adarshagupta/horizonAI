@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { dataStore } from '@/lib/data-store'
+import { rtdb } from '@/lib/firebase'
+import { ref, push, set, serverTimestamp } from 'firebase/database'
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { customerName, customerEmail, customerInfo, message, businessId, priority = 'medium' } = body
 
-    console.log('Creating offline ticket:', { customerName, customerEmail, customerInfo, businessId })
+    console.log('🎫 Creating offline ticket:', { customerName, customerEmail, customerInfo, businessId })
 
     // Extract customer details from either format
     const finalCustomerName = customerName || customerInfo?.name || 'Customer'
@@ -19,31 +20,40 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const ticket = dataStore.createTicket({
+    // Create ticket in Firebase
+    const ticketsRef = ref(rtdb, 'tickets')
+    const newTicketRef = push(ticketsRef)
+    
+    const ticketData = {
+      id: newTicketRef.key!,
       customerName: finalCustomerName,
       customerEmail: finalCustomerEmail,
       message,
       businessId,
       priority,
       status: 'pending',
-      type: 'offline_message'
-    })
+      type: 'offline_message',
+      createdAt: serverTimestamp(),
+      lastActivity: serverTimestamp()
+    }
 
-    console.log('Offline ticket created:', ticket.id)
+    await set(newTicketRef, ticketData)
+    
+    console.log('✅ Offline ticket created in Firebase:', newTicketRef.key!)
 
     const response = {
       success: true,
       message: 'Your message has been received. We\'ll get back to you during business hours.',
-      ticketId: ticket.id,
+      ticketId: newTicketRef.key!,
       businessHours: '9 AM - 6 PM EST, Monday - Friday',
       metadata: {
         customerName: finalCustomerName,
         customerEmail: finalCustomerEmail,
         businessId,
         priority,
-        createdAt: ticket.createdAt
+        createdAt: Date.now()
       },
-      source: 'data-store'
+      source: 'firebase'
     }
 
     return NextResponse.json(response, {
@@ -55,10 +65,17 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('Create offline ticket API error:', error)
+    console.error('🚨 Create offline ticket API error:', error)
     return NextResponse.json(
       { error: 'Failed to create ticket', message: String(error) },
-      { status: 500 }
+      { 
+        status: 500,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'POST, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type',
+        }
+      }
     )
   }
 }

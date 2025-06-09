@@ -1,44 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { dataStore } from '@/lib/data-store'
+import { rtdb } from '@/lib/firebase'
+import { ref, get } from 'firebase/database'
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const conversationId = searchParams.get('id')
-
-    console.log('Getting conversation status for ID:', conversationId)
+    const conversationId = searchParams.get('conversationId')
 
     if (!conversationId) {
       return NextResponse.json({ error: 'Missing conversation ID' }, { status: 400 })
     }
 
-    const conversation = dataStore.getConversation(conversationId)
+    console.log('🔍 Getting simple conversation status for:', conversationId)
+
+    // Get conversation from Firebase
+    const conversationRef = ref(rtdb, `conversations/${conversationId}`)
+    const snapshot = await get(conversationRef)
     
-    if (!conversation) {
+    if (!snapshot.exists()) {
+      console.log('❌ Conversation not found in Firebase')
       return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
     }
 
-    const response = {
+    const conversation = snapshot.val()
+    console.log('✅ Found conversation in Firebase:', conversationId)
+
+    return NextResponse.json({
       conversationId,
       status: conversation.status,
       agentConnected: !!conversation.assignedAgent,
       agentName: conversation.agentName || null,
-      assignedAgent: conversation.assignedAgent || null,
-      priority: conversation.priority,
-      startedAt: conversation.startedAt,
-      lastActivity: conversation.lastActivity,
-      estimatedWaitTime: getWaitTime(conversation.status),
-      messages: conversation.messages,
-      metadata: {
-        businessId: conversation.businessId,
-        customerName: conversation.customerName,
-        customerEmail: conversation.customerEmail,
-        unreadCount: conversation.unreadCount
-      },
-      source: 'data-store'
-    }
-
-    return NextResponse.json(response, {
+      source: 'firebase'
+    }, {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
@@ -47,19 +40,19 @@ export async function GET(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('Conversation status API error:', error)
+    console.error('🚨 Simple conversation status API error:', error)
     return NextResponse.json(
       { error: 'Internal server error', message: String(error) },
-      { status: 500 }
+      { 
+        status: 500,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type',
+        }
+      }
     )
   }
-}
-
-function getWaitTime(status: string): string {
-  if (status === 'connected') return 'Connected'
-  if (status === 'waiting') return '3-7 minutes'
-  if (status === 'ended') return 'Conversation ended'
-  return '5-10 minutes'
 }
 
 export async function OPTIONS() {

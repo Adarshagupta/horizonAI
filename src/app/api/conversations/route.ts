@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { dataStore } from '@/lib/data-store'
+import { rtdb } from '@/lib/firebase'
+import { ref, get } from 'firebase/database'
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,28 +14,55 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    console.log('Fetching conversations for business ID:', businessId)
+    console.log('🔍 Fetching conversations for business ID:', businessId)
 
-    // Get conversations from data store
-    const conversations = dataStore.getConversations(businessId)
+    // Get all conversations from Firebase
+    const conversationsRef = ref(rtdb, 'conversations')
+    const snapshot = await get(conversationsRef)
     
-    console.log(`Found ${conversations.length} conversations for business ${businessId}`)
+    let businessConversations: any[] = []
+    
+    if (snapshot.exists()) {
+      const allConversations = snapshot.val()
+      
+      // Filter conversations by businessId
+      businessConversations = Object.values(allConversations).filter(
+        (conv: any) => conv.businessId === businessId
+      )
+      
+      console.log(`✅ Found ${businessConversations.length} conversations for business ${businessId}`)
+    } else {
+      console.log('📭 No conversations found in Firebase')
+    }
     
     return NextResponse.json({
-      conversations,
-      source: 'data-store',
-      count: conversations.length
+      conversations: businessConversations,
+      source: 'firebase',
+      count: businessConversations.length
+    }, {
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS', 
+        'Access-Control-Allow-Headers': 'Content-Type',
+      }
     })
 
   } catch (error) {
-    console.error('Conversations API error:', error)
+    console.error('🚨 Conversations API error:', error)
     
     return NextResponse.json(
       {
         error: 'Failed to fetch conversations',
         message: error instanceof Error ? error.message : 'Unknown error'
       },
-      { status: 500 }
+      { 
+        status: 500,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type',
+        }
+      }
     )
   }
 }
